@@ -375,3 +375,40 @@ func getValidResponseRRSetAll() domains.List[domains.RRSet] {
 		},
 	}
 }
+
+// The DNS API rejects a request with a body unless it is declared as JSON:
+// "Input should be a valid dictionary or object to extract fields from".
+func TestRequestsWithBodyDeclareJSONContentType(t *testing.T) {
+	t.Parallel()
+
+	for _, changeType := range []ChangeType{Create, Update} {
+		mux := http.NewServeMux()
+		server := httptest.NewServer(mux)
+		t.Cleanup(server.Close)
+
+		setUpCommonEndpoints(mux, getValidResponseZoneAllBytes(t), http.StatusOK)
+
+		rrSetList := getValidResponseRRSetAllBytes(t)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+
+			switch {
+			case r.Method == http.MethodGet:
+				w.Write(rrSetList)
+			case r.Header.Get("Content-Type") != "application/json":
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":"bad_request","description":"Input should be a valid dictionary","location":"body"}`))
+			default:
+				w.Write([]byte(`{"id":"1234","name":"test.com.","type":"A","ttl":300}`))
+			}
+		}
+		mux.HandleFunc("/zones/1234/rrset", handler)
+		mux.HandleFunc("/zones/1234/rrset/1234", handler)
+		mux.HandleFunc("/zones/5678/rrset", handler)
+
+		dnsProvider, err := getDefaultTestProvider(server, getDefaultKeystoneProvider(t, 1))
+		assert.NoError(t, err)
+
+		assert.NoError(t, dnsProvider.ApplyChanges(context.Background(), getChangeTypeChanges(changeType)))
+	}
+}

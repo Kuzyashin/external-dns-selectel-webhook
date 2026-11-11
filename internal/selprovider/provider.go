@@ -33,6 +33,9 @@ func (p *Provider) getDomainsClient() (domains.DNSClient[domains.Zone, domains.R
 	httpClient := httpdefault.Client()
 	headers := httpdefault.Headers()
 	headers.Add("X-Auth-Token", token)
+	// domains-go sends the JSON body as is and sets no Content-Type. The DNS API rejects
+	// such create and update requests: "Input should be a valid dictionary or object".
+	headers.Set("Content-Type", "application/json")
 
 	return domains.NewClient(p.endpoint, &httpClient, headers), nil
 }
